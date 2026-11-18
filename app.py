@@ -5,6 +5,8 @@ import joblib
 import time
 import base64
 from pathlib import Path
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from tensorflow import keras
 
 st.set_page_config(page_title="Study Smarter", page_icon="🎓", layout="centered")
@@ -70,6 +72,18 @@ CARD_CSS = (
     ".mbar { height: 8px; background: #ffffff22; border-radius: 6px; overflow: hidden; margin-top: 8px; }"
     ".mfill { height: 100%; background: linear-gradient(90deg, #ff6b1a, #ffa54d); transition: width 0.5s ease; }"
     "@media (max-width: 700px) { .mcards { grid-template-columns: repeat(2, 1fr); } }"
+    "</style>"
+)
+
+EVAL_CSS = (
+    "<style>"
+    ".eval-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 8px; }"
+    ".eval-card { background: #0f2344; border: 1px solid #ff6b1a; border-radius: 14px; padding: 16px 12px; text-align: center; }"
+    ".eval-label { color: #cfd8e6; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }"
+    ".eval-value { color: #ffffff; font-size: 30px; font-weight: 700; margin-top: 6px; }"
+    ".eval-unit { color: #ffa54d; font-size: 13px; margin-top: 2px; }"
+    ".eval-note { color: #cfd8e6; font-size: 13px; margin-top: 10px; }"
+    "@media (max-width: 700px) { .eval-grid { grid-template-columns: 1fr; } }"
     "</style>"
 )
 
@@ -168,8 +182,24 @@ def predictive_tips(student):
     gains.sort(key=lambda g: g[3], reverse=True)
     return [g for g in gains if g[3] >= 0.5]
 
-st.markdown("<h1>" + TITLE + "</h1>", unsafe_allow_html=True)
+@st.cache_data
+def get_model_metrics():
+    df_all = pd.read_csv("students.csv")
+    _, test_df = train_test_split(df_all, test_size=0.2, random_state=42)
+    y_true = test_df["marks"].values
+    y_pred = np.clip(model.predict(preprocess(test_df), verbose=0).flatten(), 0, 100)
+    return {
+        "MAE": float(mean_absolute_error(y_true, y_pred)),
+        "RMSE": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "R2": float(r2_score(y_true, y_pred)),
+        "n": int(len(test_df)),
+        "y_true": y_true,
+        "y_pred": y_pred,
+    }
+
 set_background("background.jpg")
+
+st.markdown("<h1>" + TITLE + "</h1>", unsafe_allow_html=True)
 st.write(SUBTITLE)
 
 col1, col2 = st.columns(2)
@@ -254,5 +284,32 @@ if st.button("Recommend a study method", type="primary"):
 
     st.bar_chart(results.set_index("Study method")["Predicted marks"])
     st.dataframe(results.drop(columns="key"), hide_index=True)
+
+st.markdown("## 📊 Model performance")
+
+if Path("students.csv").exists():
+    m = get_model_metrics()
+    st.markdown(
+        EVAL_CSS
+        + '<div class="eval-grid">'
+        + '<div class="eval-card"><div class="eval-label">MAE</div>'
+        + '<div class="eval-value">' + f"{m['MAE']:.2f}" + "</div>"
+        + '<div class="eval-unit">average error in marks</div></div>'
+        + '<div class="eval-card"><div class="eval-label">RMSE</div>'
+        + '<div class="eval-value">' + f"{m['RMSE']:.2f}" + "</div>"
+        + '<div class="eval-unit">typical error in marks</div></div>'
+        + '<div class="eval-card"><div class="eval-label">R²</div>'
+        + '<div class="eval-value">' + f"{m['R2']:.3f}" + "</div>"
+        + '<div class="eval-unit">share of variation explained</div></div>'
+        + "</div>"
+        + '<div class="eval-note">Measured on ' + str(m["n"])
+        + " students the model did not train on (20% of the data, held out before training).</div>",
+        unsafe_allow_html=True,
+    )
+
+    chart_df = pd.DataFrame({"Actual marks": m["y_true"], "Predicted marks": m["y_pred"]})
+    st.scatter_chart(chart_df, x="Actual marks", y="Predicted marks", color="#ff6b1a")
+else:
+    st.write("Upload students.csv to the repository to show model performance.")
 
 st.caption("This is a prototype trained on synthetic data. It shows patterns, not guaranteed results.")
