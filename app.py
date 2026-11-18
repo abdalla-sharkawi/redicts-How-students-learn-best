@@ -285,7 +285,7 @@ if st.button("Recommend a study method", type="primary"):
     st.bar_chart(results.set_index("Study method")["Predicted marks"])
     st.dataframe(results.drop(columns="key"), hide_index=True)
 
-st.markdown("## 📊 Model performance")
+st.markdown("## Model performance")
 
 if Path("students.csv").exists():
     m = get_model_metrics()
