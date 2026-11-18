@@ -53,27 +53,25 @@ h1, h2, h3, h4, p, label, li, .stMarkdown, .stCaption,
 .stButton > button[kind="primary"]:hover {
     background: #ff8a4c;
 }
-[data-testid="stSidebar"] {
-    background: rgba(8, 20, 45, 0.95);
-}
 </style>
 """
 
-LOADER_HTML = """
-<div style="background:#0f2344;border:1px solid #ff6b1a;border-radius:14px;padding:20px;margin:10px 0;">
-    <div style="display:flex;align-items:center;gap:14px;">
-        <div style="width:26px;height:26px;border:4px solid #ffffff33;border-top:4px solid #ff6b1a;border-radius:50%;animation:spin 0.9s linear infinite;"></div>
-        <div style="color:#ffffff;font-size:16px;">__STEP_TEXT__</div>
-    </div>
-    <div style="margin-top:14px;background:#ffffff22;border-radius:8px;height:10px;overflow:hidden;">
-        <div style="width:__PCT__%;height:100%;background:linear-gradient(90deg,#ff6b1a,#ffa54d);transition:width 0.4s ease;"></div>
-    </div>
-    <div style="color:#cfd8e6;font-size:13px;margin-top:6px;">__PCT__% complete</div>
-</div>
-<style>
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-</style>
-"""
+CARD_CSS = (
+    "<style>"
+    "@keyframes pulse { 0% { opacity: 0.45; } 50% { opacity: 1; } 100% { opacity: 0.45; } }"
+    "@keyframes glow { 0% { box-shadow: 0 0 6px #ff6b1a; } 50% { box-shadow: 0 0 24px #ff6b1a; } 100% { box-shadow: 0 0 6px #ff6b1a; } }"
+    ".mcards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }"
+    ".mcard { background: #0f2344; border: 1px solid #ffffff33; border-radius: 12px; padding: 12px 8px; text-align: center; }"
+    ".mcard.scan { animation: pulse 0.8s ease-in-out infinite; border-color: #ff6b1a; }"
+    ".mcard.done { border-color: #ff6b1a; }"
+    ".mcard.best { animation: glow 1.4s ease-in-out infinite; border-color: #ffa54d; }"
+    ".mname { font-size: 13px; color: #cfd8e6; min-height: 32px; }"
+    ".mscore { font-size: 22px; font-weight: 700; color: #ffffff; margin-top: 6px; }"
+    ".mbar { height: 8px; background: #ffffff22; border-radius: 6px; overflow: hidden; margin-top: 8px; }"
+    ".mfill { height: 100%; background: linear-gradient(90deg, #ff6b1a, #ffa54d); transition: width 0.5s ease; }"
+    "@media (max-width: 700px) { .mcards { grid-template-columns: repeat(2, 1fr); } }"
+    "</style>"
+)
 
 def set_background(image_file):
     if not Path(image_file).exists():
@@ -81,23 +79,35 @@ def set_background(image_file):
     data = base64.b64encode(Path(image_file).read_bytes()).decode()
     st.markdown(BACKGROUND_CSS.replace("__BG_DATA__", data), unsafe_allow_html=True)
 
-def loader_html(step_text, fraction):
-    pct = str(int(fraction * 100))
-    return LOADER_HTML.replace("__STEP_TEXT__", step_text).replace("__PCT__", pct)
-
-def require_login():
-    if st.session_state.get("logged_in"):
-        return
-    st.markdown("<h1>🔒 Sign in</h1>", unsafe_allow_html=True)
-    st.write("Enter the password to use the Study Smarter predictor.")
-    password = st.text_input("Password", type="password")
-    if st.button("Log in", type="primary"):
-        if password == st.secrets["APP_PASSWORD"]:
-            st.session_state["logged_in"] = True
-            st.rerun()
+def render_cards(names, scores, states, stage_text, pct):
+    # states: 0 waiting, 1 scanning, 2 revealed, 3 best
+    parts = [
+        CARD_CSS,
+        '<div style="color:#ffffff;font-size:16px;margin-bottom:10px;">' + stage_text + "</div>",
+        '<div style="background:#ffffff22;border-radius:8px;height:10px;overflow:hidden;margin-bottom:14px;">'
+        '<div style="width:' + str(pct) + '%;height:100%;background:linear-gradient(90deg,#ff6b1a,#ffa54d);transition:width 0.3s ease;"></div></div>',
+        '<div class="mcards">',
+    ]
+    for i, name in enumerate(names):
+        state = states[i]
+        if state == 0:
+            cls, score_text, width = "mcard", "–", 0
+        elif state == 1:
+            cls, score_text, width = "mcard scan", "testing...", 0
+        elif state == 2:
+            cls, score_text, width = "mcard done", "%.1f" % scores[i], scores[i]
         else:
-            st.error("Wrong password. Please try again.")
-    st.stop()
+            cls, score_text, width = "mcard best", "%.1f" % scores[i], scores[i]
+        width = max(0, min(100, float(width)))
+        parts.append(
+            '<div class="' + cls + '">'
+            '<div class="mname">' + name + "</div>"
+            '<div class="mscore">' + score_text + "</div>"
+            '<div class="mbar"><div class="mfill" style="width:' + str(round(width, 1)) + '%;"></div></div>'
+            "</div>"
+        )
+    parts.append("</div>")
+    return "".join(parts)
 
 def performance_level(mark):
     if mark >= 80:
@@ -106,22 +116,6 @@ def performance_level(mark):
         return "Good", "👍", "There's clear room to improve. Switching to the recommended method can close part of the gap."
     else:
         return "Needs work", "💪", "The predicted marks are low. Combine the recommended method with the habit changes below, and ask a teacher or classmate for help with difficult topics."
-
-def habit_tips(s):
-    tips = []
-    if s["sleep_hours"] < 7:
-        tips.append("Sleep: aim for 7 to 8 hours. In this model, sleep far from 8 hours is linked to lower marks.")
-    if s["distraction"] >= 7:
-        tips.append("Focus: put your phone in another room during study sessions. High distraction lowers predicted marks the most.")
-    if s["attendance"] < 75:
-        tips.append("Attendance: regular class attendance is strongly linked to higher marks.")
-    if s["study_hours"] < 10:
-        tips.append("Study time: adding a few more weekly hours is linked to higher marks.")
-    if s["prev_gpa"] < 2.5:
-        tips.append("Foundations: start with short review sessions to rebuild confidence before tackling harder material.")
-    if not tips:
-        tips.append("Your habits look solid. Keep them consistent, since regular routines matter most.")
-    return tips
 
 @st.cache_resource
 def load_files():
@@ -138,22 +132,44 @@ def preprocess(d):
                 .values.astype(float))
     return np.hstack([numeric, onehot]).astype("float32")
 
-set_background("background.jpg")
-require_login()
+def predict_methods(student):
+    rows = pd.DataFrame([{**student, "method": m} for m in METHODS])
+    return np.clip(model.predict(preprocess(rows), verbose=0).flatten(), 0, 100)
 
-with st.sidebar:
-    st.header("Account")
-    st.write("You are signed in.")
-    if st.button("Log out"):
-        st.session_state["logged_in"] = False
-        st.rerun()
-    st.divider()
-    st.write("**How it works**")
-    st.write("1. Set your habits.")
-    st.write("2. Click the button.")
-    st.write("3. Read the recommendation and tips.")
+def build_scenarios(student):
+    changes = [
+        ("Sleeping closer to 8 hours", {"sleep_hours": 8.0}),
+        ("Lowering distraction by 3 points", {"distraction": max(0, student["distraction"] - 3)}),
+        ("Adding 5 study hours per week", {"study_hours": min(30, student["study_hours"] + 5)}),
+        ("Raising attendance by 10 points", {"attendance": min(100, student["attendance"] + 10)}),
+        ("Raising previous GPA by 0.5", {"prev_gpa": min(4.0, student["prev_gpa"] + 0.5)}),
+    ]
+    scenarios = [("base", {})]
+    for label, change in changes:
+        if any(student[k] != v for k, v in change.items()):
+            scenarios.append((label, change))
+    return scenarios
+
+def predictive_tips(student):
+    scenarios = build_scenarios(student)
+    rows = []
+    for _, change in scenarios:
+        for m in METHODS:
+            rows.append({**student, **change, "method": m})
+    preds = np.clip(model.predict(preprocess(pd.DataFrame(rows)), verbose=0).flatten(), 0, 100)
+    n = len(METHODS)
+    blocks = [preds[i * n:(i + 1) * n] for i in range(len(scenarios))]
+
+    base_best = float(blocks[0].max())
+    gains = []
+    for (label, _), block in zip(scenarios[1:], blocks[1:]):
+        new_best = float(block.max())
+        gains.append((label, base_best, new_best, new_best - base_best))
+    gains.sort(key=lambda g: g[3], reverse=True)
+    return [g for g in gains if g[3] >= 0.5]
 
 st.markdown("<h1>" + TITLE + "</h1>", unsafe_allow_html=True)
+set_background("background.jpg")
 st.write(SUBTITLE)
 
 col1, col2 = st.columns(2)
@@ -174,25 +190,31 @@ if st.button("Recommend a study method", type="primary"):
         "distraction": distraction,
     }
 
-    steps = [
-        "Reading your study habits",
-        "Testing all five study methods",
-        "Comparing predicted marks",
-        "Choosing the best method",
-    ]
-    placeholder = st.empty()
-    for idx, step in enumerate(steps):
-        placeholder.markdown(loader_html(step + "...", (idx + 1) / len(steps)), unsafe_allow_html=True)
-        time.sleep(0.6)
+    names = [m.replace("_", " ").title() for m in METHODS]
+    scores = predict_methods(student)
+    best_idx = int(np.argmax(scores))
+    states = [0] * len(METHODS)
 
-    rows = pd.DataFrame([{**student, "method": m} for m in METHODS])
-    preds = np.clip(model.predict(preprocess(rows), verbose=0).flatten(), 0, 100)
-    placeholder.empty()
+    slot = st.empty()
+    slot.markdown(render_cards(names, scores, states, "Loading your study profile...", 0), unsafe_allow_html=True)
+    time.sleep(0.6)
+
+    for i in range(len(METHODS)):
+        states[i] = 1
+        slot.markdown(render_cards(names, scores, states, "Testing " + names[i] + "...", i * 20), unsafe_allow_html=True)
+        time.sleep(0.5)
+        states[i] = 2
+        slot.markdown(render_cards(names, scores, states, "Predicted marks for " + names[i], (i + 1) * 20), unsafe_allow_html=True)
+        time.sleep(0.3)
+
+    states[best_idx] = 3
+    slot.markdown(render_cards(names, scores, states, "Best method found", 100), unsafe_allow_html=True)
+    time.sleep(0.8)
 
     results = pd.DataFrame({
         "key": METHODS,
-        "Study method": [m.replace("_", " ").title() for m in METHODS],
-        "Predicted marks": preds.round(1),
+        "Study method": names,
+        "Predicted marks": scores.round(1),
     }).sort_values("Predicted marks", ascending=False).reset_index(drop=True)
 
     best = results.iloc[0]
@@ -207,11 +229,23 @@ if st.button("Recommend a study method", type="primary"):
     label, icon, level_text = performance_level(best_mark)
     st.success(icon + " **" + label + ".** Recommended method: **" + best["Study method"] + "**")
     st.write(level_text)
-    st.info("**How to use " + best["Study method"] + ":** " + METHOD_ADVICE[best["key"]])
 
-    st.markdown("**Habit tips based on your inputs:**")
-    for tip in habit_tips(student):
-        st.markdown("- " + tip)
+    st.markdown("**What would change your predicted marks:**")
+    tips = predictive_tips(student)
+    if tips:
+        for name, base, new, gain in tips[:3]:
+            st.markdown(
+                f"- {name}: predicted best marks rise from {base:.1f} to {new:.1f} (+{gain:.1f})"
+            )
+        st.caption("These are model estimates from changing one habit at a time, not guaranteed results.")
+    else:
+        st.write("Your inputs already sit near the model's best settings, so the biggest gain now comes from using the recommended method consistently.")
+
+    st.info("**How to use " + best["Study method"] + ":** " + METHOD_ADVICE[best["key"]])
+    st.warning(
+        "**Avoid relying on " + worst["Study method"] + " alone.** It has the lowest predicted marks, "
+        + f"{gap:.1f} marks below your best method."
+    )
 
     if best_mark >= 80:
         st.balloons()
