@@ -7,6 +7,8 @@ import base64
 from pathlib import Path
 from tensorflow import keras
 
+st.set_page_config(page_title="Study Smarter", page_icon="🎓", layout="centered")
+
 TITLE = "🎓 Study Smarter"
 SUBTITLE = "Enter your study habits. The model predicts your marks for each study method and recommends the one most likely to work for you."
 
@@ -20,8 +22,6 @@ METHOD_ADVICE = {
     "reading_notes": "Rewrite your notes as summaries in your own words, then check them against the source. Re-reading alone is weak.",
     "video_lectures": "Pause videos often and try the problems yourself before watching the solution. Watching without practicing rarely raises marks.",
 }
-
-st.set_page_config(page_title="Study Smarter", page_icon="🎓", layout="centered")
 
 BACKGROUND_CSS = """
 <style>
@@ -43,6 +43,18 @@ h1, h2, h3, h4, p, label, li, .stMarkdown, .stCaption,
 [data-testid="stMetricLabel"], [data-testid="stMetricValue"],
 [data-testid="stWidgetLabel"] p {
     color: #ffffff !important;
+}
+.stButton > button[kind="primary"] {
+    background: #ff6b1a;
+    border: none;
+    color: #ffffff;
+    font-weight: 600;
+}
+.stButton > button[kind="primary"]:hover {
+    background: #ff8a4c;
+}
+[data-testid="stSidebar"] {
+    background: rgba(8, 20, 45, 0.95);
 }
 </style>
 """
@@ -72,6 +84,20 @@ def set_background(image_file):
 def loader_html(step_text, fraction):
     pct = str(int(fraction * 100))
     return LOADER_HTML.replace("__STEP_TEXT__", step_text).replace("__PCT__", pct)
+
+def require_login():
+    if st.session_state.get("logged_in"):
+        return
+    st.markdown("<h1>🔒 Sign in</h1>", unsafe_allow_html=True)
+    st.write("Enter the password to use the Study Smarter predictor.")
+    password = st.text_input("Password", type="password")
+    if st.button("Log in", type="primary"):
+        if password == st.secrets["APP_PASSWORD"]:
+            st.session_state["logged_in"] = True
+            st.rerun()
+        else:
+            st.error("Wrong password. Please try again.")
+    st.stop()
 
 def performance_level(mark):
     if mark >= 80:
@@ -113,6 +139,19 @@ def preprocess(d):
     return np.hstack([numeric, onehot]).astype("float32")
 
 set_background("background.jpg")
+require_login()
+
+with st.sidebar:
+    st.header("Account")
+    st.write("You are signed in.")
+    if st.button("Log out"):
+        st.session_state["logged_in"] = False
+        st.rerun()
+    st.divider()
+    st.write("**How it works**")
+    st.write("1. Set your habits.")
+    st.write("2. Click the button.")
+    st.write("3. Read the recommendation and tips.")
 
 st.markdown("<h1>" + TITLE + "</h1>", unsafe_allow_html=True)
 st.write(SUBTITLE)
