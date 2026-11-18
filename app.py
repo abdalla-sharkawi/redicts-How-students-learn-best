@@ -8,6 +8,14 @@ from tensorflow import keras
 NUM = ["study_hours", "sleep_hours", "attendance", "prev_gpa", "distraction"]
 METHODS = ["practice_tests", "flashcards", "group_study", "reading_notes", "video_lectures"]
 
+ADVICE = {
+    "practice_tests": "Test yourself often. Answer questions from memory, then check your mistakes. Short quizzes every few days work well.",
+    "flashcards": "Review short sets of key terms and formulas every day. Fifteen to twenty minutes daily beats one long session.",
+    "group_study": "Study with classmates, but agree on a clear agenda and keep phones away. Explaining topics to each other helps most.",
+    "reading_notes": "Rewrite your notes as summaries in your own words, then check them against the source. Re-reading alone is weak.",
+    "video_lectures": "Pause videos often and try the problems yourself before watching the solution. Watching without practicing rarely raises marks.",
+}
+
 @st.cache_resource
 def load_files():
     model = keras.models.load_model("study_predictor.keras")
@@ -45,7 +53,6 @@ if st.button("Recommend a study method", type="primary"):
         "distraction": distraction,
     }
 
-    # Animated progress bar
     progress = st.progress(0, text="Analyzing your study habits...")
     for i in range(0, 101, 5):
         time.sleep(0.03)
